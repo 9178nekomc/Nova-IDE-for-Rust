@@ -1,0 +1,62 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="NovaRS icon">
+  <defs>
+    <!-- 日落主渐变：深紫蓝 → 品红 → 暖橙 -->
+    <linearGradient id="sunset" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#1B1B3A"/>
+      <stop offset="34%"  stop-color="#6B2D8B"/>
+      <stop offset="66%"  stop-color="#D63A6F"/>
+      <stop offset="100%" stop-color="#FF9E4F"/>
+    </linearGradient>
+    <!-- 柔和光晕（左上） -->
+    <radialGradient id="glow" cx="28%" cy="22%" r="72%">
+      <stop offset="0%"   stop-color="#FFFFFF" stop-opacity="0.20"/>
+      <stop offset="55%"  stop-color="#FFFFFF" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <!-- 星体：暖白 → 淡橙 -->
+    <linearGradient id="star" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#FFFFFF"/>
+      <stop offset="60%"  stop-color="#FFEFD2"/>
+      <stop offset="100%" stop-color="#FFC98A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 底板 -->
+  <rect x="0" y="0" width="512" height="512" rx="110" fill="url(#sunset)"/>
+  <rect x="0" y="0" width="512" height="512" rx="110" fill="url(#glow)"/>
+
+  <!-- 轨道细弧（太空感） -->
+  <path d="M 64 348 A 260 260 0 0 1 356 52"
+        fill="none" stroke="#FFFFFF" stroke-opacity="0.22"
+        stroke-width="8" stroke-linecap="round"/>
+
+  <!-- 主星（Nova 新星，四角星芒） -->
+  <path d="M 224 70
+           C 236 158 280 202 368 214
+           C 280 226 236 270 224 358
+           C 212 270 168 226 80 214
+           C 168 202 212 158 224 70 Z"
+        fill="url(#star)"/>
+
+  <!-- 伴星（右上） -->
+  <path d="M 384 96
+           C 390 136 406 152 446 158
+           C 406 164 390 180 384 220
+           C 378 180 362 164 322 158
+           C 362 152 378 136 384 96 Z"
+        fill="#FFEFD2" fill-opacity="0.95"/>
+
+  <!-- 微星（左上点缀） -->
+  <path d="M 118 96
+           C 121 118 130 127 152 130
+           C 130 133 121 142 118 164
+           C 115 142 106 133 84 130
+           C 106 127 115 118 118 96 Z"
+        fill="#FFEFD2" fill-opacity="0.75"/>
+
+  <!-- JetBrains 式印记：黑色圆角方块 + 白色首字母 -->
+  <rect x="324" y="324" width="128" height="128" rx="28" fill="#0B0B12"/>
+  <text x="388" y="414" text-anchor="middle"
+        font-family="Segoe UI, Arial, Helvetica, sans-serif"
+        font-size="86" font-weight="700" fill="#FFFFFF">N</text>
+</svg>
