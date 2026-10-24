@@ -1,0 +1,12 @@
+# Rust 构建产物
+/target/
+dist/
+*.exe
+*.pdb
+*.rlib
+
+# IDE 与系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
