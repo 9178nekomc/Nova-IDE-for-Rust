@@ -1,6 +1,6 @@
 [package]
 name = "novars"
-version = "2.0.1"
+version = "2.0.2"
 edition = "2021"
 description = "NovaRS v2.0 (Super Upgrade Edition) - Modular Native Rust IDE with AI Copilot, MCP Server, IDEA-style Live Diagnostics & VS Code Engine"
 

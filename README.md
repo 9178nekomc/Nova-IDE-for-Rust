@@ -2,7 +2,7 @@
 
 # 🦀 NovaRS v2.0 (Super Upgrade Edition)
 
-**Nova IDE for Rust v2.0.1 — 模块化 AI 原生 Rust 集成开发环境**
+**Nova IDE for Rust v2.0.2 — 模块化 AI 原生 Rust 集成开发环境**
 
 纯 Rust 原生实现 · 模块化标准架构 · 内置 AI Agent 副驾驶 · 内置 MCP 协议服务 · IDEA 级实时报错预检 · 大文件无截断引擎
 
@@ -111,6 +111,28 @@ NOVARS_SPLASH_SECS=0.5 ./target/release/novars.exe   # 取值 (0, 3600)
 - 依赖管理：解析并编辑 `Cargo.toml`，增删依赖、配置 `features`、切换 Edition、改版本号、12 款精选库一键引入。
 - 8 套主题（VS Code Dark+ / One Dark Pro / Dracula / Tokyo Night / Catppuccin Mocha / Monokai Pro / Solarized Light / GitHub Light）。
 - 30+ 文件格式专属彩色徽章；插件清单加载（`plugins/*.json`）。
+
+### 8. 🌐 网络与代理语义（v2.0.2 修正）
+
+模型请求统一走系统 `curl`，代理设置与面板选项严格对应：
+
+| 面板选项 | curl 行为 |
+|---------|-----------|
+| 直连 (无代理) | `--noproxy *`，**完全忽略** `HTTP(S)_PROXY` / `ALL_PROXY` 环境变量 |
+| 跟随系统环境变量 | 读取环境变量代理，并按 `no_proxy` 名单放行直连 |
+| HTTP / SOCKS5 代理 | 显式 `-x`（缺 scheme 时自动补 `http://` 或 `socks5://`），本地回环始终直连 |
+
+修正前的实现只在「显式代理」时传 `-x`，其余情况 curl 仍会读取环境变量：系统里跑着 Clash/VPN 时，
+即便选了「直连」，请求也会被送进代理；对 `127.0.0.1` 的本地模型（Ollama）尤其致命——代理会返回
+`502 upstream connect failed` 或空包，而空包在旧实现里只会表现为 `EOF while parsing a value at
+line 1 column 0`。
+
+配套改进：
+
+- 每次请求使用独立临时文件（`novars_req_<pid>_<seq>_<nanos>.tmp`），侧栏对话与「AI 修复」并发时不再互相覆盖。
+- 响应体改由 curl `-o` 写文件、`-w "%{http_code}"` 回传状态码，因此 **4xx/5xx 与空包都能拿到状态码与报文摘要**。
+- 错误信息统一附带模型名、脱敏后的 URL（去掉 `?key=...` 与代理账号密码）与可执行建议；
+  常见 curl 退出码（6/7/28/35/60）会翻译成具体排查方向。
 
 ---
 
