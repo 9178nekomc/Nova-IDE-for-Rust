@@ -5,8 +5,8 @@ use eframe::egui::{Color32, Vec2};
 
 pub const APP_NAME: &str = "NovaRS";
 pub const APP_FULL_NAME: &str = "Nova IDE for Rust";
-pub const APP_VERSION: &str = "v2.0.0-Super";
-pub const APP_NAME_WITH_VERSION: &str = "NovaRS v2.0.0-Super";
+pub const APP_VERSION: &str = "v2.0.1-Super";
+pub const APP_NAME_WITH_VERSION: &str = "NovaRS v2.0.1-Super";
 
 pub const SPLASH_SIZE: Vec2 = Vec2 { x: 520.0, y: 340.0 };
 pub const MAIN_SIZE: Vec2 = Vec2 { x: 1400.0, y: 860.0 };

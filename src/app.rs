@@ -205,6 +205,13 @@ pub struct App {
     pub minimap_cache: Option<(u64, Vec<MiniRow>)>,
     pub scroll_to_offset: Option<f32>,
     pub editor_scroll_meta: Option<(f32, f32, f32, f32)>,
+    /// 文本首行相对「行区顶部」的常量偏移（ScrollArea 内边距 + TextEdit 文本边距）。
+    /// 行号栏若不自洽地对齐它，滚动后行号会比代码错开约 1/3 行。
+    pub editor_text_dy: f32,
+    /// 实测行高（Galley 实际排版出的每行像素高度）。
+    /// egui 的 `Fonts::row_height` 与实际 Galley 行高可能相差零点几像素，
+    /// 上千行后累计成数十行的行号/代码错位，因此一律以实测值为准。
+    pub editor_row_pitch: f32,
     pub match_highlight: Option<(u64, usize, usize)>,
     pub git_branch: Option<String>,
 }
@@ -308,6 +315,8 @@ impl App {
             minimap_cache: None,
             scroll_to_offset: None,
             editor_scroll_meta: None,
+            editor_text_dy: 0.0,
+            editor_row_pitch: 0.0,
             match_highlight: None,
             git_branch: None,
         };
@@ -2506,7 +2515,13 @@ impl App {
 
         // 3. 横向并排：左侧动态宽度不截断行号/断点/诊断栏 + 右侧代码编辑区
         let theme = CodeTheme::from_preset(self.settings.theme_preset);
-        let row_h = ctx.fonts(|f| f.row_height(&FontId::monospace(MONO_SIZE)));
+        let font_row_h = ctx.fonts(|f| f.row_height(&FontId::monospace(MONO_SIZE)));
+        // 优先使用上一帧从 Galley 实测到的行高，保证行号栏、缩进线、诊断线与文本严格同基准
+        let row_h = if self.editor_row_pitch > 1.0 {
+            self.editor_row_pitch
+        } else {
+            font_row_h
+        };
         let char_w = ctx.fonts(|f| {
             f.layout_no_wrap("M".to_string(), FontId::monospace(MONO_SIZE), Color32::WHITE)
                 .size()
@@ -2530,7 +2545,14 @@ impl App {
         let breakpoints = self.tabs[ti].breakpoints.clone();
         let line_diag_map = build_line_severity_map(&self.tabs[ti].diagnostics);
 
+        // egui 的 `Ui::horizontal` 只为子 Ui 申请 `spacing().interact_size.y`（默认 18px）的行高，
+        // 子 Ui 内的 `available_height()` 因此返回 18 而不是面板剩余高度 —— 行号栏与编辑器
+        // 若照抄这个值，整块编辑区会塌缩成 18px（曾被 `.max(120.0)` 掩盖成 120px 的"只有顶部一条"）。
+        // 这里先取父 Ui 的真实可用高度，再用 `set_height` 把整行显式撑满。
+        let editor_row_size = ui.available_size();
+        let editor_row_top = ui.available_rect_before_wrap().top();
         ui.horizontal(|ui| {
+            ui.set_height(editor_row_size.y.max(120.0));
             let gutter_out = draw_gutter(
                 ctx,
                 ui,
@@ -2539,6 +2561,7 @@ impl App {
                     base_line_0based,
                     visible_line_count: visible_window_lines,
                     scroll_offset_y: scroll_off_y,
+                    text_dy: self.editor_text_dy,
                     row_h,
                     char_w,
                     cursor_line_1based: self.cursor_line,
@@ -2565,7 +2588,17 @@ impl App {
                 }
             }
 
-            self.draw_editor_core(ctx, ui, ti, &theme, row_h, char_w, total_lines, base_line_0based);
+            self.draw_editor_core(
+                ctx,
+                ui,
+                ti,
+                &theme,
+                row_h,
+                char_w,
+                total_lines,
+                base_line_0based,
+                editor_row_top,
+            );
         });
     }
 
@@ -2580,6 +2613,7 @@ impl App {
         char_w: f32,
         total_lines: usize,
         base_line_0based: usize,
+        row_top: f32,
     ) {
         let mut swallow_enter = false;
         if self.ime_composing {
@@ -2642,12 +2676,8 @@ impl App {
             .min(20_000.0);
 
         let avail_h = ui.available_height();
-        let avail_h = if avail_h.is_finite() && avail_h > 120.0 {
-            avail_h
-        } else {
-            600.0
-        };
-        let content_h = (window_line_count as f32 * row_h + row_h * 2.0).max(avail_h - 4.0);
+        // 短文件时也要铺满整个视口（否则编辑器背景与当前行高亮只覆盖前几行）
+        let content_h = (window_line_count as f32 * row_h + row_h * 2.0).max(avail_h.max(row_h * 8.0));
 
         let editor_id = Self::editor_id_of(tab_id);
         let scroll_target = self.scroll_to_line;
@@ -2655,6 +2685,9 @@ impl App {
         let pending_selection = self.pending_selection.take();
         let mut consumed_scroll = false;
         let mut popup_anchor_local: Option<egui::Pos2> = None;
+        // 文本首行的屏幕 y（由 Galley 决定），用于把行号栏对齐到真实文本基线
+        let mut galley_top_y: Option<f32> = None;
+        let mut galley_h: Option<f32> = None;
 
         let show_indent_guides = self.settings.show_indent_guides;
         let show_active_guide = self.settings.show_active_indent_guide;
@@ -2706,6 +2739,10 @@ impl App {
                     st.store(ctx, editor_id);
                 }
             }
+
+            // 记录文本首行的真实屏幕 y（与是否获得焦点无关）
+            galley_top_y = Some(out.galley_pos.y);
+            galley_h = Some(out.galley.rect.height());
 
             if let Some(range) = out.cursor_range {
                 let local = out.galley.pos_from_ccursor(range.primary.ccursor);
@@ -2803,6 +2840,28 @@ impl App {
             }
         });
 
+        // 行号栏以「行区顶部 - 滚动偏移」为原点，而文本实际从 Galley 的 y 开始；
+        // 两者相差 ScrollArea 内边距 + TextEdit 文本边距。缓存该常量差值供行号栏对齐。
+        if let Some(g0) = galley_top_y {
+            self.editor_text_dy = g0 - (row_top - scroll_out.state.offset.y);
+        }
+        if let Some(gh) = galley_h {
+            let pitch = gh / window_line_count.max(1) as f32;
+            if pitch.is_finite() && pitch > 1.0 && (pitch - self.editor_row_pitch).abs() > 0.01 {
+                self.editor_row_pitch = pitch;
+                // 行高测量值变化后立即补一帧，让行号栏用新行高重排
+                ctx.request_repaint();
+            }
+        }
+        // 行号栏与迷你地图消费的是「上一帧」的滚动偏移；偏移一旦变化，本帧的绘制就会错位，
+        // 而 egui 按需重绘时可能不再有下一帧，错位会定格在屏幕上。这里在偏移变化后补一帧。
+        let prev_offset = self
+            .editor_scroll_meta
+            .filter(|m| m.0 as u64 == tab_id)
+            .map(|m| m.1);
+        if prev_offset.map(|p| (p - scroll_out.state.offset.y).abs() > 0.5).unwrap_or(true) {
+            ctx.request_repaint();
+        }
         self.editor_scroll_meta = Some((
             tab_id as f32,
             scroll_out.state.offset.y,

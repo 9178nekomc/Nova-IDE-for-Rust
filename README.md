@@ -2,7 +2,7 @@
 
 # 🦀 NovaRS v2.0 (Super Upgrade Edition)
 
-**Nova IDE for Rust v2.0.0 — 模块化 AI 原生 Rust 集成开发环境**
+**Nova IDE for Rust v2.0.1 — 模块化 AI 原生 Rust 集成开发环境**
 
 纯 Rust 原生实现 · 模块化标准架构 · 内置 AI Agent 副驾驶 · 内置 MCP 协议服务 · IDEA 级实时报错预检 · 大文件无截断引擎
 
@@ -80,6 +80,10 @@ NOVARS_SPLASH_SECS=0.5 ./target/release/novars.exe   # 取值 (0, 3600)
 
 - **4000~5000+ 行行号截断**：根因是整份文本一次性塞进单个 `egui::TextEdit` Galley，行数超阈值后高度突破 GPU 纹理与单 Mesh 顶点上限。现采用**动态自适应数字位宽** + **大文件滑动视口窗口化渲染**（`LARGE_FILE_LINE_THRESHOLD = 2500`，窗口 1200 行），编辑后按字节区间无缝回写全文。
 - **VS Code 级缩进辅助线**：空白行按前后非空邻居插值（Lookbehind/Lookahead），跨越空行不断线；支持当前代码块激活高亮，并自动避开 `{}` 首字符。
+- **编辑区高度与行号基线（v2.0.1 修复）**：
+  - `Ui::horizontal` 只为子 Ui 申请 `spacing().interact_size.y`（默认 18px）行高，子 Ui 内的 `available_height()` 并不等于面板剩余高度。行号栏与编辑器若照此取值，整块编辑区会塌缩成一条（实测 120px）。现先取父 Ui 真实可用尺寸，再用 `set_height` 显式撑满整行。
+  - `Fonts::row_height()` 与 Galley 实际排版行高可能相差零点几像素（当前字体为 15.71 vs 实测 16.00）。上千行后累计成数十行错位，行号与代码对不上。现改为**以 Galley 实测行高为唯一基准**，行号栏、缩进线、诊断线、行跳转共用同一 `row_h`。
+  - 行号栏与迷你地图消费的是上一帧的滚动偏移，egui 按需重绘时可能不再产生下一帧、把错位定格。现在偏移或行高变化时主动 `request_repaint` 补一帧。
 
 ### 3. 🔍 IDEA 风格实时预检与一键修复
 

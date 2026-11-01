@@ -17,6 +17,9 @@ pub struct GutterRenderParams<'a> {
     pub base_line_0based: usize,
     pub visible_line_count: usize,
     pub scroll_offset_y: f32,
+    /// 文本首行相对「行区顶部 - 滚动偏移」的常量偏移（ScrollArea 内边距 + TextEdit 文本边距）。
+    /// 由编辑器在真实布局完成后回写，用于把行号对齐到文本基线。
+    pub text_dy: f32,
     pub row_h: f32,
     pub char_w: f32,
     pub cursor_line_1based: usize,
@@ -44,7 +47,9 @@ pub fn draw_gutter(
     params: &GutterRenderParams<'_>,
 ) -> GutterInteraction {
     let (digits, _num_w, sidebar_w) = compute_gutter_width(params.total_lines, params.char_w);
-    let avail_h = ui.available_height().max(120.0);
+    // 调用方（`draw_editor_area`）已用 `ui.set_height` 把整行撑满，此处拿到的是面板真实高度。
+    // 保留一个下限，避免极端窗口尺寸下行号栏高度归零。
+    let avail_h = ui.available_height().max(params.row_h * 8.0);
     let (side_rect, side_resp) = ui.allocate_exact_size(Vec2::new(sidebar_w, avail_h), Sense::click());
 
     let mut interaction = GutterInteraction {
@@ -73,10 +78,16 @@ pub fn draw_gutter(
     let visible_rows = (avail_h / params.row_h).ceil() as usize + 3;
     let last_local = (first_local + visible_rows).min(params.visible_line_count);
 
+    // 行号基线：与文本 Galley 的行首 y 完全一致，避免滚动后行号比代码错开约 1/3 行
+    let line_y = |local_idx: usize| -> f32 {
+        side_rect.top() + params.text_dy + local_idx as f32 * params.row_h - params.scroll_offset_y
+    };
+
     if side_resp.clicked() {
         if let Some(pos) = side_resp.interact_pointer_pos() {
-            let local_row = ((pos.y - side_rect.top() + params.scroll_offset_y) / params.row_h)
-                .floor()
+            let local_row = ((pos.y - side_rect.top() - params.text_dy + params.scroll_offset_y)
+                / params.row_h)
+                .round()
                 .max(0.0) as usize;
             let global_line_1based = params.base_line_0based + local_row + 1;
             if global_line_1based >= 1 && global_line_1based <= params.total_lines {
@@ -99,7 +110,7 @@ pub fn draw_gutter(
         if global_line_1based > params.total_lines {
             break;
         }
-        let y = side_rect.top() + (local_idx as f32 * params.row_h) - params.scroll_offset_y;
+        let y = line_y(local_idx);
         if y + params.row_h < side_rect.top() || y > side_rect.bottom() {
             continue;
         }
