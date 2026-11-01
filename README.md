@@ -1,142 +1,264 @@
 <div align="center">
 
-# 🦀 NovaRS
+# 🦀 NovaRS v2.0 (Super Upgrade Edition)
 
-**Nova IDE for Rust v0.1.0**
+**Nova IDE for Rust v2.0.0 — 模块化 AI 原生 Rust 集成开发环境**
 
-纯 Rust 原生实现的轻量级 IDE —— 单个 exe，双击即跑，无需安装。
+纯 Rust 原生实现 · 模块化标准架构 · 内置 AI Agent 副驾驶 · 内置 MCP 协议服务 · IDEA 级实时报错预检 · 大文件无截断引擎
 
-`egui + eframe` · 无 WebView · 无 Electron · 无外部依赖
+`egui + eframe + syn + walkdir + serde_json` · 无 WebView · 无 Electron · 零运行时冗余依赖
 
 </div>
 
 ---
 
-## ✨ 特性一览
+## 目录
 
-### 智能编辑器
-- **Rust 语法高亮**：关键字 / 字符串 / 注释 / 数字 / 类型 / 生命周期全着色，中文注释完美渲染
-- **智能补全**：内嵌 rust-analyzer（LSP over stdio，编译期打包进 exe，用户零安装），打字自动触发 + `Ctrl+Space` 手动触发；LSP 未就绪时自动降级为内置引擎（当前文件标识符 + 标准库 + Cargo.toml 依赖）
-- **行号与缩进辅助线**：VS Code 风格逐行缩进参考线，大文件只渲染可视行
-- **多标签编辑**：✕ 关闭、脏标记 `*`、关闭未保存文件确认
-- **撤销 / 重做 / 剪切 / 复制 / 粘贴 / 全选**（含中文输入法回车保护）
-- **Tab 缩进**：4 空格，选区整块缩进
-- **断点标记**：行号侧栏点击切换，红色圆点
-
-### 工程能力
-- **文件树**：walkdir 真实遍历，📁📄🦀📦 图标，状态色标记（绿=已保存 / 黄=未保存 / 红=编译错误），右键菜单（新建 / 重命名 / 删除 / 在文件管理器中显示 / 复制路径）
-- **新建项目**：6 种模板（空项目 / 输出 / 变量 / 判断 / 输入判断输出 / 异步任务），选位置、输入名称即创建
-- **项目搜索**：`Ctrl+Shift+F` 全项目文本搜索（跳过 .git/target），点击结果跳转 + 编辑器内黄色高亮
-- **当前文件查找**：`Ctrl+F`，匹配计数，编辑器内高亮
-- **AST 侧边栏**：syn 实时解析 mod / struct / fn / enum / trait，点击跳转对应行
-- **真实终端**：内嵌 PowerShell 持久会话（`cd` 等状态保留），UTF-8 输出，面板高度自由拖拽
-- **运行与检查**：`F5` cargo run / `F7` cargo check，输出面板实时显示，编译错误映射到文件树红色标记
-
-### 界面
-- **日落风启动画面**：三段渐变 + 流动斜线 + 工具链实时检测，就绪后自动进入主界面
-- **代码迷你地图**：缩略色块 + 视口高亮框，点击/拖拽跳转
-- **暗色 / 亮色主题**：一键切换，持久化偏好
-- **增强状态栏**：文件路径 · 行/列 · 语言 · UTF-8 · LF/CRLF · Git 分支 · 版本
-
-### 交付形态
-- **真正的单文件**：rust-analyzer、中文字体、应用图标全部编译期嵌入；CRT 静态链接。拷贝到任何 Windows 10/11 机器双击即用，无需 VC++ 运行库、无需任何安装
+- [快速开始](#快速开始)
+- [v2.0 核心进化](#v20-核心进化)
+- [架构与目录](#架构与目录)
+- [MCP 服务与鉴权](#mcp-服务与鉴权)
+- [快捷键](#快捷键)
+- [测试与质量门禁](#测试与质量门禁)
+- [安全模型与已知限制](#安全模型与已知限制)
+- [许可证](#许可证)
 
 ---
 
-## ⌨️ 快捷键
+## 快速开始
+
+### 环境要求
+
+| 项 | 要求 |
+|----|------|
+| Rust 工具链 | `stable` ≥ 1.77（开发验证于 1.98.1） |
+| 目标平台 | Windows 10/11 x64（主目标）；macOS / Linux 走同一 eframe 后端 |
+| 链接器 | MSVC 工具链需 VS Build Tools；GNU 工具链需 MinGW-w64 |
+| 可选 | `rust-analyzer`（位于 PATH 或 `%USERPROFILE%\.cargo\bin`，构建期会被嵌入） |
+| 可选 | `curl`（远程模型 API 走系统 curl 发起 HTTPS 请求） |
+
+### 构建
+
+```bash
+git clone https://github.com/9178nekomc/Nova-IDE-for-Rust.git
+cd Nova-IDE-for-Rust
+cargo build --release
+# 产物：target/release/novars.exe（Windows）/ target/release/novars
+```
+
+首次构建约 3–5 分钟（egui/eframe 依赖链），增量构建约 20 秒。
+
+### 运行
+
+```bash
+cargo run --release
+# 或直接运行产物
+./target/release/novars.exe
+```
+
+启动后先显示 520×340 无边框启动动画，随后切换为主窗口（1400×860）。若需调整启动动画时长（例如自动化截图），设置环境变量：
+
+```bash
+NOVARS_SPLASH_SECS=0.5 ./target/release/novars.exe   # 取值 (0, 3600)
+```
+
+### 首次使用建议
+
+1. `Ctrl+O` 打开一个 Cargo 工程目录（后续启动自动恢复）。
+2. `Ctrl+Shift+I` 展开 AI 侧栏，在「⚙ 模型管理」中填入 API Key；不填也可用内置离线 Rust 专家引擎验证修复流程。
+3. 在「🩺 环境检测」中一键补齐 `rust-analyzer` / `clippy` / `rustfmt` 组件，必要时写入国内 crates 镜像。
+
+---
+
+## v2.0 核心进化
+
+### 1. 🏗 标准化、模块化工程架构
+
+原本 4,600+ 行的单文件 `src/main.rs` 按现代 Rust 工业标准拆分：**15 个顶层模块 + `editor/` 与 `ai/` 两个子模块组，共 27 个源码文件**（`src/app.rs` 仍承担界面编排，其余按职责切分）。
+
+### 2. 🔧 编辑器顽疾根治
+
+- **4000~5000+ 行行号截断**：根因是整份文本一次性塞进单个 `egui::TextEdit` Galley，行数超阈值后高度突破 GPU 纹理与单 Mesh 顶点上限。现采用**动态自适应数字位宽** + **大文件滑动视口窗口化渲染**（`LARGE_FILE_LINE_THRESHOLD = 2500`，窗口 1200 行），编辑后按字节区间无缝回写全文。
+- **VS Code 级缩进辅助线**：空白行按前后非空邻居插值（Lookbehind/Lookahead），跨越空行不断线；支持当前代码块激活高亮，并自动避开 `{}` 首字符。
+
+### 3. 🔍 IDEA 风格实时预检与一键修复
+
+- 打字瞬间用 `syn::parse_file` 做 AST 语法级预检，叠加启发式检查（未闭合定界符、缺分号、`.unwrap()` 崩溃风险、`todo!()`），并融合后台 `cargo check --message-format=json` 的编译器诊断。
+- 行内波浪线 + 行尾 Error Lens + `◀/▶` 错误导航；选中报错后可「🤖 让 AI 修复」或「⚡ 快速修复」，修改先进入预览态，由绿色对比横幅决定 **接受** 或 **撤回**。
+
+### 4. 🤖 AI Agent 副驾驶
+
+- 多协议：OpenAI 兼容（DeepSeek / OpenRouter / vLLM）、Anthropic Messages、Google Gemini、Ollama 本地。
+- Codex 风格 5 档思考强度滑块（MIN / LOW / MED / HIGH / xHIGH），映射为 `reasoning_effort` 或 `thinking.budget_tokens`。
+- 多会话标签、工作区上下文附着、`novars-patch` 行级补丁协议、`novars-mcp` 工具调用协议。
+- 三级沙箱：**严格逐步确认** / **工作区均衡**（只读放行、写与命令需确认）/ **YOLO 全自动**，三者统一由 `verify_workspace_jail` 强制约束在工作区内。
+
+### 5. 🔌 内置 MCP 服务
+
+标准 JSON-RPC 2.0 over HTTP，暴露 `read_file` / `write_file` / `apply_diff` / `list_files` / `search_code` / `get_diagnostics` / `get_ast_outline` / `run_cargo`。详见 [MCP 服务与鉴权](#mcp-服务与鉴权)。
+
+### 6. 🖥 集成终端
+
+多标签、`↑/↓` 历史回溯、ANSI 控制序列剥离、强制 UTF-8 编码、快捷指令芯片（`cargo check/run/test/clippy`、`git status`）。日志缓存上限 256 KB 并按 UTF-8 字符边界安全裁剪。
+
+### 7. 🛠 环境、依赖、主题、图标与插件
+
+- 环境检测中心：`rustc`/`cargo`/`rustup`/`rust-analyzer`/`clippy`/`rustfmt` 与链接器检测、组件一键安装、`stable/beta/nightly` 频道切换、RsProxy/TUNA/USTC 稀疏索引镜像写入。
+- 依赖管理：解析并编辑 `Cargo.toml`，增删依赖、配置 `features`、切换 Edition、改版本号、12 款精选库一键引入。
+- 8 套主题（VS Code Dark+ / One Dark Pro / Dracula / Tokyo Night / Catppuccin Mocha / Monokai Pro / Solarized Light / GitHub Light）。
+- 30+ 文件格式专属彩色徽章；插件清单加载（`plugins/*.json`）。
+
+---
+
+## 架构与目录
+
+```text
+Nova-IDE-for-Rust/
+├── Cargo.toml                  # 依赖与包元数据
+├── build.rs                    # 编译期定位并嵌入 rust-analyzer + Windows 图标资源
+├── assets/Deng.ttf             # 内嵌中文字体（保证跨机渲染一致）
+├── icons/                      # SVG + ICO + 512px PNG
+├── plugins/sample-profiler.json# 插件清单示例
+└── src/
+    ├── main.rs                 # 入口：视口初始化、图标解码
+    ├── app.rs                  # 应用状态机、菜单、多面板布局、快捷键调度
+    ├── constants.rs            # 全局常量、品牌色、虚拟化阈值
+    ├── config.rs               # 持久化配置、代理、模型档案、沙箱层级
+    ├── theme.rs                # 8 套主题引擎
+    ├── icons.rs                # 文件类型图标与徽章
+    ├── utils.rs                # UTF-8 安全切片、ANSI 剥离、缩进、小写偏移映射
+    ├── lsp.rs                  # rust-analyzer JSON-RPC 客户端 + 降级补全
+    ├── ast.rs                  # syn AST 大纲
+    ├── terminal.rs             # 多标签集成终端
+    ├── toolchain.rs            # 工具链检测与镜像配置
+    ├── deps.rs                 # Cargo.toml 可视化依赖管理
+    ├── project.rs              # 脚手架模板与 Debug/Release 运行器
+    ├── mcp.rs                  # MCP HTTP 服务端（鉴权 / 审计 / 工具分发）
+    ├── plugins.rs              # 插件与钩子
+    ├── editor/
+    │   ├── mod.rs              # 编辑器标签状态
+    │   ├── gutter.rs           # 动态宽度行号栏
+    │   ├── indent_guides.rs    # 缩进参考线
+    │   ├── syntax.rs           # 语法高亮 + 迷你地图
+    │   └── diagnostics.rs      # 实时诊断与 AI 修复预览
+    └── ai/
+        ├── mod.rs              # AI 侧栏 UI 与状态
+        ├── client.rs           # 多协议 HTTP 客户端
+        ├── models.rs           # 模型档案管理
+        ├── prompts.rs          # 系统提示词与补丁协议
+        ├── sessions.rs         # 多会话
+        ├── codex_slider.rs     # 思考强度滑块
+        └── sandbox.rs          # 工作区越界校验（单一收口点）
+```
+
+---
+
+## MCP 服务与鉴权
+
+默认监听 `http://127.0.0.1:18765/mcp`，可在「🔌 MCP」面板启停或改端口。
+
+### 鉴权（v2.0 起强制）
+
+服务每次启动会用操作系统 CSPRNG（Windows `BCryptGenRandom`，类 Unix `/dev/urandom`）生成 32 字节随机令牌，以 64 位十六进制显示在 MCP 面板中。外部客户端必须携带：
+
+```http
+Authorization: Bearer <token>
+```
+
+也接受 `X-NovaRS-Token: <token>`。此外：
+
+- 携带 `Origin` 头的请求一律返回 `403` —— 合法 MCP 客户端是原生进程，出现 `Origin` 即意味着浏览器发起的跨站请求（防"任意网页驱动本机 IDE 读写文件"）。
+- 响应不返回任何 CORS 头。
+- 令牌校验使用定长时间比较，避免逐字节计时侧信道。
+- 只接受 `POST /mcp`，只支持 `Content-Length` 定长报文（`Transfer-Encoding: chunked` 显式返回 `411`），报文头上限 64 KiB、正文上限 8 MiB。
+
+### 客户端配置示例
+
+```json
+{
+  "mcpServers": {
+    "novars-ide": {
+      "url": "http://127.0.0.1:18765/mcp",
+      "headers": { "Authorization": "Bearer <启动后从 MCP 面板复制的令牌>" }
+    }
+  }
+}
+```
+
+### 协议行为
+
+| 方法 | 行为 |
+|------|------|
+| `initialize` | 返回 `protocolVersion: 2024-11-05`、`serverInfo`、`capabilities.tools` |
+| `notifications/*`（无 `id`） | 返回 `202 Accepted`，**不返回响应体**（符合 JSON-RPC 通知语义） |
+| `tools/list` | 每个工具均带 `inputSchema`（JSON Schema） |
+| `tools/call` | 结果统一为 `content[].text` + `isError` 布尔，错误不抛 HTTP 异常 |
+| 未知方法 | `-32601 Method not found` |
+| 非法 JSON | `-32700 Parse error` |
+
+### 工具约束
+
+- 所有文件操作经 `verify_workspace_jail`：词法规范化折叠 `.`/`..`、按**路径分量**比较（不是字符串前缀，故 `C:\ws-evil` 不会冒充 `C:\ws`）、并对已存在的最近祖先做真实路径校验（阻断软链接/目录联接外逃）。
+- `run_cargo` 只允许 `check / test / clippy / fmt / build` 白名单。
+- `read_file` 单次最多 5,000 行；`search_code` 单文件上限 4 MiB、最多 50 条命中；`list_files` 最多 5,000 条并按路径分量剪枝 `target`/`.git`/`node_modules`。
+- 审计日志保留最近 500 条（面板内可清空）。
+
+---
+
+## 快捷键
 
 | 快捷键 | 功能 |
 |--------|------|
-| `Ctrl+N` | 新建文件 |
-| `Ctrl+O` | 打开文件夹 |
-| `Ctrl+S` | 保存 |
-| `Ctrl+Shift+S` | 全部保存 |
-| `Ctrl+W` | 关闭当前标签 |
-| `Ctrl+F` | 当前文件查找 |
-| `Ctrl+Shift+F` | 在文件中搜索 |
-| `Ctrl+Space` | 触发补全 |
-| `Tab` | 确认补全 / 缩进 |
-| `Esc` | 关闭补全 / 搜索面板 |
-| ``Ctrl+` `` | 切换终端面板 |
-| `F5` | 运行（cargo run） |
-| `F7` | 检查（cargo check） |
+| `Ctrl+N` / `Ctrl+O` | 新建文件 / 打开项目文件夹 |
+| `Ctrl+S` / `Ctrl+Shift+S` | 保存当前 / 全部保存（触发后台 Cargo 诊断） |
+| `Ctrl+W` / `Ctrl+F` / `Ctrl+Shift+F` | 关闭标签 / 文件内查找 / 全项目搜索 |
+| `Ctrl+Space` | 触发智能补全 |
+| `Tab` / `Shift+Tab` | 确认补全 / 缩进与反缩进 |
+| `Ctrl+Shift+I` | 展开/收起 AI 副驾驶 |
+| ``Ctrl+` `` | 展开/收起集成终端 |
+| `F5` / `Shift+F5` | 运行 / 带 `RUST_BACKTRACE=full` 调试运行 |
+| `F7` | `cargo check` |
 
 ---
 
-## 🚀 快速开始
+## 测试与质量门禁
 
-### 使用预编译版本
-1. 从 `dist/` 目录获取 `novars.exe`（约 20 MB）
-2. 双击运行 —— 就这么简单
-
-### 从源码构建
 ```bash
-git clone <repo-url>
-cd NovaRustIDE
-cargo build --release
-# 产物：target/release/novars.exe
+cargo build --release     # 必须零 error、零源码 warning
+cargo test                # 21 个单元/集成用例
+cargo clippy --release    # 仅剩风格级建议（无 correctness 级告警）
 ```
 
-> 构建时 build.rs 会自动在 PATH 和 `~/.cargo/bin` 中定位 rust-analyzer 并嵌入；
-> 若本机未安装 rust-analyzer，exe 照常构建，补全自动降级为内置引擎。
+测试覆盖范围：
+
+- `ai::sandbox` —— 工作区越界：`..` 逃逸、绝对路径、同前缀兄弟目录、`./` 归一、工作区内部 `..` 合法消解、无工作区拒绝。
+- `mcp::tests` —— 令牌熵与格式、定长时间比较、报文边界查找、构建目录剪枝。
+- `mcp::http_tests` —— 真实 TCP 端到端：无令牌 `401`、错令牌 `401`、带 `Origin` `403`、`initialize` 成功、通知返回 `202` 空体、`tools/list` 全部带 `inputSchema`、`write_file`→`read_file` 往返、越界写被拦截、**200 KiB 正文完整收发**（回归旧实现 64 KiB 截断缺陷）、未知方法 `-32601`。
+
+GUI 冒烟：以 `NOVARS_SPLASH_SECS=0.6` 启动产物，确认进程存活、主窗口渲染、MCP 端口 `LISTENING`，并实测未鉴权请求返回 `401`、带 `Origin` 返回 `403`。
 
 ---
 
-## 🏗️ 技术栈
+## 安全模型与已知限制
 
-| 组件 | 说明 |
-|------|------|
-| [egui](https://github.com/emilk/egui) / [eframe](https://github.com/emilk/egui/tree/master/crates/eframe) | 即时模式 GUI 框架，纯 GPU 渲染 |
-| [syn](https://github.com/dtolnay/syn) | Rust 源码 AST 解析（侧边栏） |
-| [walkdir](https://github.com/BurntSushi/walkdir) | 文件树 / 项目搜索遍历 |
-| [rfd](https://github.com/PolyMeilex/rfd) | 原生文件对话框 |
-| [serde_json](https://github.com/serde-rs/json) | LSP JSON-RPC 通信 |
-| [image](https://github.com/image-rs/image) | PNG 编解码（帧导出 / 图标） |
-| rust-analyzer | 编译期嵌入的 LSP 补全引擎 |
+已实施：
 
-**硬性约束**（项目自始贯彻）：无 WebView/DOM · 无 async/tokio · 无 unsafe · 无 unwrap（全部显式错误处理）· 所有文件操作走 std::fs
+- MCP 服务仅绑定 `127.0.0.1`，强制 Bearer 令牌，拒绝浏览器源，无 CORS 头。
+- AI 与 MCP 的所有文件写入统一经工作区沙箱校验。
+- 子进程一律以 `CREATE_NO_WINDOW` 启动，不弹控制台。
+- 终端日志、审计日志、搜索命中数均有硬上限，避免长跑内存无界增长。
+- 全文查找在大小写折叠改变字节长度时使用偏移映射（避免非字符边界切片 panic）。
 
----
+**已知限制（明确记录，不隐瞒）**：
 
-## 📁 项目结构
-
-```
-NovaRustIDE/
-├── src/main.rs        # 全部实现（~4600 行）
-├── build.rs           # rust-analyzer 定位嵌入 + exe 图标资源
-├── assets/Deng.ttf    # 嵌入的中文界面字体（等线）
-├── icons/             # SVG 图标源 + ICO + PNG
-├── demo_project/      # 验收用示例项目
-├── tools/             # 构建/验收辅助脚本
-└── dist/novars.exe    # 单文件成品
-```
+1. **模型 API Key 以明文存储在 `%APPDATA%\NovaRS\settings.json`**。当前依赖栈未引入 DPAPI/Keychain/Secret Service 封装，属于已知短板；在共享机器上请勿保存密钥。后续若接入 `keyring` 类凭证后端会一并迁移为密文。
+2. **exe 资源图标可能缺失**：`build.rs` 通过 `winresource` 调用 `rc.exe`；若构建机缺少 Windows SDK 或安全策略禁止其查询注册表，则跳过资源图标（仅 warning，不影响功能）。运行时窗口图标由 `ViewportBuilder::with_icon` 独立设置，始终正常。
+3. **MCP 未实现 `Mcp-Session-Id` / SSE 流式传输**，仅支持请求-响应式工具调用；依赖流式通知的客户端需降级使用。
+4. **`get_diagnostics` 会真实执行 `cargo check`**，首次调用在该工程冷编译时可能耗时数十秒。
+5. 嵌入 `rust-analyzer` 会显著增大产物（当前约 37 MB）；若不需要，可从 PATH 中移除 `rust-analyzer` 后重新构建，`build.rs` 会自动降级为内置补全引擎。
 
 ---
 
-## 📄 许可证
+## 许可证
 
-本项目基于 [MIT License](LICENSE) 发布。
-
-```
-MIT License
-
-Copyright (c) 2026 NovaRS Contributors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
+本项目基于 [MIT License](LICENSE) 开源发布。

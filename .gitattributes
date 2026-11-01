@@ -1,0 +1,8 @@
+# 统一行尾，避免 Windows/Linux 检出差异造成的伪变更
+* text=auto eol=lf
+*.ps1 text eol=crlf
+
+# 二进制资源不做换行与 diff 处理
+*.ico binary
+*.png binary
+*.ttf binary

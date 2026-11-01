@@ -5,6 +5,9 @@ dist/
 *.pdb
 *.rlib
 
+# 本地构建/运行日志（历史上曾误提交 crash.log）
+*.log
+
 # IDE 与系统
 .idea/
 .vscode/

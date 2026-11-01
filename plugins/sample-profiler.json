@@ -1,0 +1,10 @@
+{
+  "id": "cargo-flamegraph-profiler",
+  "name": "Cargo Benchmark & Performance Profiler",
+  "version": "1.0.0",
+  "author": "NovaRS Ecosystem",
+  "description": "一键运行基准性能测试 (`cargo test --release -- --nocapture`) 并分析热点函数",
+  "hook_kind": "ToolbarAction",
+  "command_or_rule": "cargo test --release -- --nocapture",
+  "builtin": false
+}
