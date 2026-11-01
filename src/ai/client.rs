@@ -48,18 +48,13 @@ pub fn send_ai_request(
     let request_body = build_protocol_json_body(profile, effort_level, system_prompt, conversation);
     let body_str = serde_json::to_string(&request_body).map_err(|e| e.to_string())?;
 
-    // Determine effective URL (for Gemini, append `:generateContent?key=...`)
-    let target_url = if profile.protocol == ApiProtocol::GoogleGemini {
-        let base = profile.base_url.trim_end_matches('/');
-        format!(
-            "{}/{}:generateContent?key={}",
-            base,
-            profile.model_identifier.trim(),
-            profile.api_key.trim()
-        )
-    } else {
-        profile.base_url.trim().to_string()
-    };
+    // 解析最终请求端点：用户填"基础地址"或"完整端点"都能工作（见 resolve_endpoint）
+    let target_url = resolve_endpoint(
+        profile.protocol,
+        &profile.base_url,
+        &profile.model_identifier,
+        &profile.api_key,
+    );
 
     // 基础前提校验：没有 URL / 非 http(s) 的配置直接给出可读错误，而不是交给 curl 报错
     if target_url.is_empty() {
@@ -92,12 +87,14 @@ pub fn send_ai_request(
 
     if !(200..300).contains(&outcome.status) {
         return Err(format!(
-            "模型 `{}` 接口返回 HTTP {} {}（{}）",
+            "模型 `{}` 接口返回 HTTP {} {}（实际请求 {}）{}{}",
             profile.name,
             outcome.status,
             outcome.reason,
-            redact_url(&target_url)
-        ) + &outcome.describe_body());
+            redact_url(&target_url),
+            outcome.describe_body(),
+            status_hint(outcome.status)
+        ));
     }
     if outcome.body.trim().is_empty() {
         return Err(format!(
@@ -167,6 +164,87 @@ fn parse_status_line(head: &str) -> (u16, String) {
     (status, reason)
 }
 
+/// 把用户填写的 Base URL 解析成最终请求端点。
+///
+/// 各家文档对 "Base URL" 的定义并不统一：有的要求填到 `/v1/messages`，有的只要求填到
+/// `/anthropic` 或 `/v1`（SDK 自己拼路径）。用户按文档填了基础地址，客户端却直接 POST
+/// 上去，就会得到 404。这里统一处理：**已经带完整端点就原样用，否则补全协议的标准路径**，
+/// 保证 `https://api.deepseek.com/anthropic`、`https://api.anthropic.com/v1/messages`、
+/// `https://api.deepseek.com` 三种写法都能打到正确的接口。
+fn resolve_endpoint(
+    protocol: ApiProtocol,
+    base_url: &str,
+    model_id: &str,
+    api_key: &str,
+) -> String {
+    let base = base_url.trim().trim_end_matches('/').to_string();
+    if base.is_empty() {
+        return base;
+    }
+    // 去掉已有查询串/片段，避免拼接出 `?x=1/v1/messages` 这种畸形 URL。
+    // 端点 URL 上的查询串本身没有语义（鉴权走 Header / Gemini 走 ?key=），直接丢弃是安全的。
+    let base = match base.find(['?', '#']) {
+        Some(i) => base[..i].to_string(),
+        None => base,
+    };
+
+    let ends_with_ci = |suffix: &str| -> bool {
+        base.len() >= suffix.len()
+            && base[base.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
+    };
+
+    match protocol {
+        ApiProtocol::AnthropicMessages => {
+            if ends_with_ci("/messages") {
+                base
+            } else if ends_with_ci("/v1") {
+                format!("{}/messages", base)
+            } else {
+                // 含 DeepSeek 的 Anthropic 兼容入口 https://api.deepseek.com/anthropic
+                format!("{}/v1/messages", base)
+            }
+        }
+        ApiProtocol::OpenAiCompatible => {
+            if ends_with_ci("/chat/completions") || ends_with_ci("/completions") {
+                base
+            } else if ends_with_ci("/v1") {
+                format!("{}/chat/completions", base)
+            } else {
+                format!("{}/v1/chat/completions", base)
+            }
+        }
+        ApiProtocol::OllamaLocal => {
+            if ends_with_ci("/api/chat") || ends_with_ci("/api/generate") {
+                base
+            } else if ends_with_ci("/api") {
+                format!("{}/chat", base)
+            } else if ends_with_ci("/v1") {
+                // Ollama 的 OpenAI 兼容层：路径同 OpenAI，但报文结构仍是 OpenAI 形状，
+                // 因此这里必须提示用户改用 OpenAI 协议，而不是静默拼一个解析不了的结果
+                format!("{}/chat/completions", base)
+            } else {
+                format!("{}/api/chat", base)
+            }
+        }
+        ApiProtocol::GoogleGemini => {
+            let model = model_id.trim();
+            if base.contains(":generateContent") {
+                base
+            } else {
+                let path = if ends_with_ci("/models") {
+                    format!("{}/{}:generateContent", base, model)
+                } else if ends_with_ci("/v1") || ends_with_ci("/v1beta") {
+                    format!("{}/models/{}:generateContent", base, model)
+                } else {
+                    format!("{}/v1beta/models/{}:generateContent", base, model)
+                };
+                format!("{}?key={}", path, api_key.trim())
+            }
+        }
+    }
+}
+
+
 /// 规范化代理地址：补齐 scheme，避免用户只填 `127.0.0.1:7890` 时 curl 解析成相对代理
 fn normalize_proxy_url(mode: ProxyMode, raw: &str) -> Option<String> {
     let raw = raw.trim();
@@ -181,6 +259,21 @@ fn normalize_proxy_url(mode: ProxyMode, raw: &str) -> Option<String> {
         _ => "http",
     };
     Some(format!("{}://{}", scheme, raw))
+}
+
+/// 按状态码给出可执行的排查方向，避免用户只看到一个裸状态码
+fn status_hint(status: u16) -> &'static str {
+    match status {
+        400 => "\n提示：请求体被拒绝，通常是模型标识符（model）写错，或该模型不支持当前参数（如 temperature / reasoning_effort）。",
+        401 => "\n提示：API Key 无效或未填写。请在「⚙ 模型管理」中检查 Key 是否属于该服务商、是否有多余空格。",
+        403 => "\n提示：Key 没有该模型的访问权限，或所在地区被服务商限制。",
+        404 => "\n提示：接口路径不对。Base URL 只需填到网关根路径（例如 https://api.deepseek.com/anthropic），客户端会自动补全 /v1/messages；也可以直接填完整端点。",
+        413 => "\n提示：请求体过大，请减少附带的工作区上下文或缩短对话历史。",
+        422 => "\n提示：参数校验失败，检查模型标识符与 max_tokens 设置。",
+        429 => "\n提示：触发限流或余额不足，请稍后再试或检查账户额度。",
+        500..=599 => "\n提示：服务端故障，稍后重试；若持续出现请确认网关/代理是否正常。",
+        _ => "",
+    }
 }
 
 /// 去掉代理 URL 里的账号密码，避免写进错误提示
@@ -487,9 +580,14 @@ fn http_post_via_curl(
             }
         }
         ApiProtocol::AnthropicMessages => {
+            // 官方 Anthropic 用 `x-api-key`；而 DeepSeek / Kimi / GLM 等 Anthropic 兼容网关
+            // 文档里给的是 `ANTHROPIC_AUTH_TOKEN`（Bearer）。两个都带上，两种网关都能认证，
+            // 官方接口会忽略多余的那个 Header。
             cmd.args([
                 "-H",
                 &format!("x-api-key: {}", profile.api_key.trim()),
+                "-H",
+                &format!("Authorization: Bearer {}", profile.api_key.trim()),
                 "-H",
                 "anthropic-version: 2023-06-01",
             ]);
@@ -1030,6 +1128,130 @@ mod tests {
             "socks5://127.0.0.1:7891"
         );
         assert_eq!(redact_proxy_credentials("127.0.0.1:7890"), "127.0.0.1:7890");
+    }
+
+    #[test]
+    fn resolves_anthropic_endpoint_from_base_url() {
+        let k = "sk-x";
+        // 用户实际遇到的写法：DeepSeek 的 Anthropic 兼容入口只填到 /anthropic
+        assert_eq!(
+            resolve_endpoint(ApiProtocol::AnthropicMessages, "https://api.deepseek.com/anthropic", "deepseek-chat", k),
+            "https://api.deepseek.com/anthropic/v1/messages"
+        );
+        // 官方文档写法（只填 host）
+        assert_eq!(
+            resolve_endpoint(ApiProtocol::AnthropicMessages, "https://api.anthropic.com", "claude", k),
+            "https://api.anthropic.com/v1/messages"
+        );
+        // 只到 /v1
+        assert_eq!(
+            resolve_endpoint(ApiProtocol::AnthropicMessages, "https://api.anthropic.com/v1", "claude", k),
+            "https://api.anthropic.com/v1/messages"
+        );
+        // 已填完整端点：保持幂等，不能重复拼接
+        assert_eq!(
+            resolve_endpoint(ApiProtocol::AnthropicMessages, "https://api.anthropic.com/v1/messages", "claude", k),
+            "https://api.anthropic.com/v1/messages"
+        );
+        // 结尾斜杠
+        assert_eq!(
+            resolve_endpoint(ApiProtocol::AnthropicMessages, "https://api.deepseek.com/anthropic/", "m", k),
+            "https://api.deepseek.com/anthropic/v1/messages"
+        );
+    }
+
+    #[test]
+    fn resolves_openai_endpoint_from_base_url() {
+        let k = "sk-x";
+        assert_eq!(
+            resolve_endpoint(ApiProtocol::OpenAiCompatible, "https://api.deepseek.com", "deepseek-chat", k),
+            "https://api.deepseek.com/v1/chat/completions"
+        );
+        assert_eq!(
+            resolve_endpoint(ApiProtocol::OpenAiCompatible, "https://api.deepseek.com/v1", "deepseek-chat", k),
+            "https://api.deepseek.com/v1/chat/completions"
+        );
+        assert_eq!(
+            resolve_endpoint(ApiProtocol::OpenAiCompatible, "https://openrouter.ai/api/v1", "x", k),
+            "https://openrouter.ai/api/v1/chat/completions"
+        );
+        assert_eq!(
+            resolve_endpoint(ApiProtocol::OpenAiCompatible, "https://api.openai.com/v1/chat/completions", "gpt", k),
+            "https://api.openai.com/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn resolves_ollama_and_gemini_endpoints() {
+        let k = "AIza-secret";
+        assert_eq!(
+            resolve_endpoint(ApiProtocol::OllamaLocal, "http://127.0.0.1:11434", "qwen", ""),
+            "http://127.0.0.1:11434/api/chat"
+        );
+        assert_eq!(
+            resolve_endpoint(ApiProtocol::OllamaLocal, "http://127.0.0.1:11434/api/chat", "qwen", ""),
+            "http://127.0.0.1:11434/api/chat"
+        );
+        assert_eq!(
+            resolve_endpoint(
+                ApiProtocol::GoogleGemini,
+                "https://generativelanguage.googleapis.com/v1beta/models",
+                "gemini-2.5-pro",
+                k
+            ),
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=AIza-secret"
+        );
+        assert_eq!(
+            resolve_endpoint(ApiProtocol::GoogleGemini, "https://generativelanguage.googleapis.com", "gemini-2.5-pro", k),
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=AIza-secret"
+        );
+    }
+
+    #[test]
+    fn strips_query_before_appending_path() {
+        assert_eq!(
+            resolve_endpoint(ApiProtocol::AnthropicMessages, "https://x.dev/anthropic?debug=1", "m", "k"),
+            "https://x.dev/anthropic/v1/messages"
+        );
+    }
+
+    #[test]
+    fn end_to_end_uses_resolved_path() {
+        // 只填到 /anthropic 的 Base URL 必须真的把请求打到 /anthropic/v1/messages
+        use std::sync::{Arc, Mutex};
+        let captured: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+        let sink = captured.clone();
+        let body = r#"{"content":[{"type":"text","text":"ok"}]}"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.as_bytes().len(),
+            body
+        );
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            use std::io::{Read as _, Write as _};
+            for stream in listener.incoming() {
+                let Ok(mut s) = stream else { break };
+                let mut buf = [0u8; 8192];
+                if let Ok(n) = s.read(&mut buf) {
+                    let head = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let first = head.lines().next().unwrap_or("").to_string();
+                    *sink.lock().unwrap() = first;
+                }
+                let _ = s.write_all(response.as_bytes());
+            }
+        });
+
+        let mut p = profile(ApiProtocol::AnthropicMessages);
+        p.base_url = format!("http://127.0.0.1:{}/anthropic", port);
+        let out = call(&p).unwrap();
+        assert_eq!(out.content, "ok");
+        let req_line = captured.lock().unwrap().clone();
+        assert!(
+            req_line.contains("/anthropic/v1/messages"),
+            "实际请求行: {req_line}"
+        );
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 # 🦀 NovaRS v2.0 (Super Upgrade Edition)
 
-**Nova IDE for Rust v2.0.2 — 模块化 AI 原生 Rust 集成开发环境**
+**Nova IDE for Rust v2.0.3 — 模块化 AI 原生 Rust 集成开发环境**
 
 纯 Rust 原生实现 · 模块化标准架构 · 内置 AI Agent 副驾驶 · 内置 MCP 协议服务 · IDEA 级实时报错预检 · 大文件无截断引擎
 
@@ -133,6 +133,31 @@ line 1 column 0`。
 - 响应体改由 curl `-o` 写文件、`-w "%{http_code}"` 回传状态码，因此 **4xx/5xx 与空包都能拿到状态码与报文摘要**。
 - 错误信息统一附带模型名、脱敏后的 URL（去掉 `?key=...` 与代理账号密码）与可执行建议；
   常见 curl 退出码（6/7/28/35/60）会翻译成具体排查方向。
+
+### 9. 🔗 API 端点解析（v2.0.3 修正）
+
+各家文档对 "Base URL" 的定义不统一：Anthropic 官方要求填完整端点 `…/v1/messages`，而 DeepSeek
+的 Anthropic 兼容入口只给到 `…/anthropic`（由 SDK 自己拼 `/v1/messages`）。旧实现把用户填的值
+原样 POST，于是按文档填基础地址的用户必然拿到 `HTTP 404`。
+
+现在由 `resolve_endpoint()` 统一处理，**补全规则幂等**——填基础地址或完整端点都能工作：
+
+| 协议 | 输入示例 | 实际请求 |
+|------|---------|---------|
+| Anthropic | `https://api.deepseek.com/anthropic` | `…/anthropic/v1/messages` |
+| Anthropic | `https://api.anthropic.com/v1` | `…/v1/messages` |
+| Anthropic | `https://api.anthropic.com/v1/messages` | 原样（不重复拼接） |
+| OpenAI 兼容 | `https://api.deepseek.com` | `…/v1/chat/completions` |
+| OpenAI 兼容 | `https://openrouter.ai/api/v1` | `…/api/v1/chat/completions` |
+| Ollama | `http://127.0.0.1:11434` | `…/api/chat` |
+| Gemini | `https://generativelanguage.googleapis.com/v1beta/models` | `…/{model}:generateContent?key=…` |
+
+另外：
+
+- Anthropic 协议同时发送 `x-api-key` 与 `Authorization: Bearer` 两个认证头，
+  官方接口与 DeepSeek / Kimi / GLM 等兼容网关都能直接通过。
+- 非 2xx 响应按状态码给出针对性提示（400 参数/模型名、401 Key、404 路径、429 限流/额度、5xx 服务端）。
+- 模型管理对话框的 URL 输入框补了说明气泡与占位提示。
 
 ---
 

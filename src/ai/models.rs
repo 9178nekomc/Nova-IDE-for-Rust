@@ -168,13 +168,20 @@ impl ModelManagerDialog {
                                     });
                                 ui.end_row();
 
-                                ui.label("API 端点 (URL):");
+                                ui.label("API 端点 (URL):")
+                                    .on_hover_text(
+                                        "填基础地址或完整端点都可以：客户端会自动补全协议标准路径。\n\
+                                         例：https://api.deepseek.com/anthropic → …/anthropic/v1/messages\n\
+                                         例：https://api.deepseek.com → …/v1/chat/completions\n\
+                                         例：http://127.0.0.1:11434 → …/api/chat",
+                                    );
                                 if ui
                                     .add(
                                         egui::TextEdit::singleline(&mut m.base_url)
                                             .desired_width(240.0)
-                                            .hint_text("https://..."),
+                                            .hint_text("https://api.deepseek.com（路径自动补全）"),
                                     )
+                                    .on_hover_text("基础地址即可，无需手写 /v1/messages 或 /chat/completions")
                                     .changed()
                                 {
                                     modified = true;
